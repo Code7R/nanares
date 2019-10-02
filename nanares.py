@@ -15,16 +15,20 @@ class tDlgAction:
     ERROR = 4
     ERROR_FATAL = 5
     MAIN_MENU = 6
+    DEV_FETCH = 7
+    TEST = 42
 
 class UI:
     state = tDlgAction.FIRST
     askString = "Got milk?"
     retVal = 0
+    dlg = dialog.Dialog()
         
-    def opt_set_error(self, optVal):
-        if self.retVal != 0:
-            return 
-        self.retVal = optVal
+    def opt_set_error(self, optVal, optMsg):
+        if self.retVal == 0:
+            self.retVal = optVal
+        if optMsg:
+            self.askString = optMsg
         
     def switch_screen(self):
         if self.state == tDlgAction.EXIT:
@@ -37,15 +41,28 @@ class UI:
                 if exc.errno == errno.EEXIST and os.path.isdir(self.args.wd):
                     pass
                 else:
-                    print("Cannot create work directory: ", sys.exc_info()[0])
-                    exit1(1)
-            
+                    #print("Cannot create work directory: ", sys.exc_info()[0])
+                    opt_set_error(1, "Cannot create work directory: " + sys.exc_info()[0]);
+                    exit(1)
+            if not self.args.src:
+                ok = self.dlg.yesno("Source not specified, fetch from device?")
+                if ok == 'ok':
+                    return tDlgAction.DEV_FETCH
+                else:
+                    return tDlgAction.EXIT
             return tDlgAction.MAIN_MENU
-        if self.state == tDlgAction.ERROR or self.state == tDlgAction.ERROR_FATAL:
-            print(self.askString)
-            if self.state == tDlgAction.ERROR_FATAL:
-                self.opt_set_error(42)
-                return tDlgAction.EXIT
+        if self.state == tDlgAction.ERROR:
+            return tDlgAction.EXIT
+        if self.state == tDlgAction.ERROR_FATAL:
+            self.dlg.msgbox(self.askString, height=17, width=72)
+            self.opt_set_error(42)
+            return tDlgAction.EXIT
+        if self.state == tDlgAction.TEST:
+            self.dlg.msgbox("oh my god", height=17, width=72)
+        if self.state == tDlgAction.DEV_FETCH:
+            self.askString = "Fetching from device not implemented yet, please pull manually"
+            return tDlgAction.ERROR_FATAL
+        self.dlg.msgbox("FATAL: unknown dialog %d" % self.state, height=17, width=72)
         return tDlgAction.EXIT
     
     def act(self):
