@@ -11,6 +11,7 @@ import argparse
 import io
 import re
 import shutil
+import ast
 
 encoding = 'utf-8'
 no_cult_env = {"LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"}
@@ -159,6 +160,8 @@ key_data="DATA"
 key_sel="SELECT_APPS"
 key_sel_all="SELECT_ALL"
 key_unsel_all="CLEAR_SELECTION"
+key_sel_load="LOAD_SELECTION"
+
 choices = [
     (key_sel, "Select apps"),
     (key_sel_all, "Check everything"),
@@ -166,9 +169,12 @@ choices = [
     ("===", "========"),
     (key_apps_data, "Inject apps and data"),
     (key_apps, "Install only APKs"),
-    (key_data, "Install only data")
-
+    (key_data, "Install only data"),
+    ("~~~", "~~~~~~~~"),
+    (key_sel_load, "Load previous selection from a previous run in the same workdir")
     ]
+
+sel_ser_file = os.path.join(args.wd, 'selection.py')
 
 def apply_selection(sel):
     global apps
@@ -176,12 +182,15 @@ def apply_selection(sel):
     for el in apps:
         if check_all: apps[el]['sel'] = True
         else: apps[el]['sel'] = (el in sel)
+    with open(sel_ser_file, 'w') as f:f.write(repr(sel))
+
+def flash_selection(mode):
+    return True
 
 while(True):
     count_all = len(apps)
     count_sel = len(list(filter(lambda el: apps[el]['sel'], apps)))
-    choice, resmode = dlg.menu(f"Please select packages and/or what to do with them. Currently selected: {count_sel}/{count_all}", choices = choices)
-    #print(choice)
+    choice, resmode = dlg.menu(f"Please select packages and/or what to do with them. Currently selected: {count_sel}/{count_all}", choices = choices, height=dlgheight, width=dlgwidth, menu_height=dlgheight-5)
     if choice != dialog.Dialog.OK: exit(0)
     if resmode == key_sel_all:
         apply_selection(['*'])
@@ -196,5 +205,9 @@ while(True):
         #print(appchoices)
         ret_btn, ret_items = dlg.checklist("Apps to act on:", choices = appchoices, width=dlgwidth, height=dlgheight, list_height=dlgheight-2)
         apply_selection(ret_items)
-    
-    
+    if resmode == key_apps or resmode == key_apps_data or resmode == key_data:
+        flash_selection(resmode)
+    if resmode == key_sel_load:
+        with open(sel_ser_file, 'r') as f: sel = ast.literal_eval(f.read())
+        apply_selection(sel)
+
