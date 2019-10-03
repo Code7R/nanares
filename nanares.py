@@ -4,10 +4,10 @@
 
 import sys
 import os
+import subprocess
 import errno
 import dialog
 import argparse
-import subprocess
 import io
 import re
 import shutil
@@ -15,9 +15,15 @@ import shutil
 encoding = 'utf-8'
 no_cult_env = {"LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"}
 #retVal = 0
-(cols, lins) = os.get_terminal_size()
-dlgwidth=int(cols*4/5)
+dlgwidth = 60
+dlgheight= 20
 err_to_ignore = [ "tar: Malformed extended header: missing equal sign", "tar: Removing leading `/' from member names", "tar: Exiting with failure status due to previous errors" ]
+
+try:
+    (cols, lins) = os.get_terminal_size()
+    dlgwidth=int(cols*4/5)
+    dlgheight=int(lins*4/5)
+except: pass
 
 def die(code, msg):
     sys.stderr.write(msg)
@@ -54,21 +60,26 @@ try:
 except:
     die(1, "Error: $HOME not set, use --wd to set work directory")
 parser.add_argument('--wd', help="Work directory, default: " + wd_default, default = wd_default)
-parser.add_argument('src', nargs='?' )
+parser.add_argument('--tmp', help="If specified, take this as folder with extracted data and ignore --wd")
+parser.add_argument('src', nargs='?', help="Source directory containing a single TWRP backup set")
 args = parser.parse_args()
 
 dlg = dialog.Dialog()
 tmp_dir = os.path.join(args.wd, "tmp")
+if(args.tmp): tmp_dir = args.tmp
 dl_dir = os.path.join(args.wd, "dl")
 tmp_stuff = []
 
 try: tmp_stuff = os.listdir(tmp_dir)
 except: pass
 
-if tmp_stuff:
-    if 'ok' != dlg.yesno("Contents found in " + tmp_dir + ", use that data? Selecting No means wiping this directory!"):
-        shutil.rmtree(tmp_dir, onerror=lambda err: die(11, "Failed to remove tmp directory"))
-        tmp_stuff = False
+if args.tmp:
+    if not tmp_stuff: die(20, "Unpacked data folder specified but no data found in " + args.tmp)
+else:
+    if tmp_stuff:
+        if 'ok' != dlg.yesno("Contents found in " + tmp_dir + ", use that data? Selecting No means wiping this directory!"):
+            shutil.rmtree(tmp_dir, onerror=lambda err: die(11, "Failed to remove tmp directory"))
+            tmp_stuff = False
 
 for subdir in [tmp_dir, dl_dir]:
     try:
@@ -121,3 +132,48 @@ if not tmp_stuff:
                 status = 0
         if status != 0:
             die(17, "tar command failed, " + serr)
+
+apps={}
+
+def cut_quoted_arg_1(s): return s.split("'")[1]
+
+for (x,y,z) in os.walk(tmp_dir + "/data/app"):
+    #print("DIRSTUFF:", z)
+    for a in z:
+        if a != "base.apk": continue
+        apkpath=x + "/" + a
+        name=''
+        pkg=''
+        tp = subprocess.Popen(["aapt", "dump", "badging", apkpath], stdout=subprocess.PIPE, universal_newlines=True, encoding=encoding)
+        for line in tp.stdout:
+            if line.startswith("application-label:"): name=cut_quoted_arg_1(line)
+            if line.startswith("package:"): pkg=cut_quoted_arg_1(line)
+            if name and pkg: break
+        print(f'OK: {pkg} ; {name} ; {apkpath}')
+        apps[pkg]=(name, apkpath) #{"name": name, "apkpath": apkpath}
+
+if not apps: die(21, "Failed to find any valid apps in " + tmp_dir)
+key_apps_data = "APPS+DATA"
+key_apps="APPS"
+key_data="DATA"
+choices = [ (key_apps_data, "Inject apps and data"), (key_apps, "Install only APKs"), (key_data, "Install only data")]
+
+while(True):
+    choice, resmode = dlg.menu("Please select operation mode, app selection will follow", choices = choices)
+    #print(choice)
+    if choice != 'ok': exit(0)
+
+    ansage = {
+        key_apps_data: "Please select applications to restore. The extracted data will be injected too, overriding any data if present.",
+        key_apps: "Please select apps to restore. No data will be installed, this can be done later.",
+        key_data: "Please select data to restore. App must already be installed on the phone!"
+        }
+
+    appchoices = []
+    for el in apps: appchoices.append((el, apps[el][0], False)) #"" + appchoices[el][0]
+    #list(map(lambda el: (el, el["name"] + " (" + pkg + ")", False), apps))
+
+    print(appchoices)
+    ret = dlg.checklist(ansage[resmode], choices = appchoices, width=dlgwidth, height=dlgheight, list_height=dlgheight-2)
+
+    print(ret)
