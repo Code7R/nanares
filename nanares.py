@@ -13,6 +13,11 @@ import re
 import shutil
 import ast
 
+#tp = subprocess.Popen(["/tmp/langsam.sh"], stdout=subprocess.PIPE, universal_newlines=True, encoding='utf-8')#
+#for line in tp.stdout:
+#    print(line)
+#exit(1)
+
 encoding = 'utf-8'
 no_cult_env = {"LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"}
 #retVal = 0
@@ -30,28 +35,28 @@ def die(code, msg):
     sys.stderr.write(msg)
     exit(code)
         
-def adb_cmd_to_string(adbmode, remotecmd):
-    #fd = os.popen("adb", cmd=remotecmd, mode='r')
-    sp = subprocess.Popen(["adb", adbmode, remotecmd], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    status = 0
-    ret = err = b''
-    try:
-        ret, err = sp.communicate(timeout=12)
-        status = sp.wait()
-        #if status != 0:
-        #    if (not ignore_error) or 
-        #        raise Exception("Failed to read adb shell output - %d: %s"%(status,err))
-        #if err:
-        #    FIXME: don't care for now
-    except subprocess.TimeoutExpired:
-        err += b'Command TIMEOUT'
-        status = 7
-    except Exception as ex:
-        err += "Other error" #: %s" % ex.args; 
-    return str(ret or b'', encoding), str(err or b'', encoding), status
-
-def adb_read_strings(remotecmd):
-    return adb_cmd_to_string("shell", remotecmd)
+#def adb_cmd_to_string(adbmode, remotecmd):
+#    #fd = os.popen("adb", cmd=remotecmd, mode='r')
+#    sp = subprocess.Popen(["adb", adbmode, remotecmd], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#    status = 0
+#    ret = err = b''
+#    try:
+#        ret, err = sp.communicate(timeout=12)
+#        status = sp.wait()
+#        #if status != 0:
+#        #    if (not ignore_error) or 
+#        #        raise Exception("Failed to read adb shell output - %d: %s"%(status,err))
+#        #if err:
+#        #    FIXME: don't care for now
+#    except subprocess.TimeoutExpired:
+ #       err += b'Command TIMEOUT'
+ #       status = 7
+#    except Exception as ex:
+#        err += "Other error" #: %s" % ex.args; 
+#    return str(ret or b'', encoding), str(err or b'', encoding), status
+#
+#def adb_read_strings(remotecmd):
+#    return adb_cmd_to_string("shell", remotecmd)
 
 parser = argparse.ArgumentParser()
 # nope, $HOME should be available or user can specify it... wd_default = (os.environ.get("HOME") or "/var/tmp") +"/.cache/nanares";
@@ -96,9 +101,13 @@ src_dir=args.src
 if not args.src:
     ok = dlg.yesno("Source not specified, fetch from device?")
     if ok == dialog.Dialog.OK:
-        ret, err, status = adb_read_strings("echo /storage/*/TWRP/BACKUPS/*/* /storage/emulated/0/TWRP/BACKUPS/*/*")
-        budirs = list(filter(lambda arg: not "*" in arg, ret.split(' ')))
-        dlg_items = map(lambda dir: re.sub(r'.*/', '', dir, dir), budirs)
+        remotecmd = "echo /storage/*/TWRP/BACKUPS/*/* /storage/emulated/0/TWRP/BACKUPS/*/*"
+        #ret, err, status = adb_read_strings()
+        p = subprocess.Popen(["adb", "shell", remotecmd], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, encoding=encoding)
+        res = p.stdout.readline().split(' ')
+        budirs = list(filter(lambda arg: arg.find('*') < 0, res))
+        dlg_items = map(lambda dir: (re.sub(r'.*/', '', dir), dir), budirs)
+        #print(budirs, dlg_items)
         button, item = dlg.menu("Please select the source from remote TWRP backup folders", width = dlgwidth, choices = dlg_items)
         if button != 'ok': exit (0)
         remote_dir = next(filter(lambda arg: arg.endswith(item), budirs))
@@ -138,7 +147,7 @@ apps={}
 
 def cut_quoted_arg_1(s): return s.split("'")[1]
 
-for (x,y,z) in os.walk(tmp_dir + "/data/app"):
+for (x,y,z) in os.walk(os.path.join(tmp_dir, "data", "app")):
     #print("DIRSTUFF:", z)
     for a in z:
         if a != "base.apk": continue
