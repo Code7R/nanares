@@ -77,7 +77,7 @@ if args.tmp:
     if not tmp_stuff: die(20, "Unpacked data folder specified but no data found in " + args.tmp)
 else:
     if tmp_stuff:
-        if 'ok' != dlg.yesno("Contents found in " + tmp_dir + ", use that data? Selecting No means wiping this directory!"):
+        if dialog.Dialog.OK != dlg.yesno("Contents found in " + tmp_dir + ", use that data? Selecting No means wiping this directory!"):
             shutil.rmtree(tmp_dir, onerror=lambda err: die(11, "Failed to remove tmp directory"))
             tmp_stuff = False
 
@@ -94,7 +94,7 @@ for subdir in [tmp_dir, dl_dir]:
 src_dir=args.src
 if not args.src:
     ok = dlg.yesno("Source not specified, fetch from device?")
-    if ok == 'ok':
+    if ok == dialog.Dialog.OK:
         ret, err, status = adb_read_strings("echo /storage/*/TWRP/BACKUPS/*/* /storage/emulated/0/TWRP/BACKUPS/*/*")
         budirs = list(filter(lambda arg: not "*" in arg, ret.split(' ')))
         dlg_items = map(lambda dir: re.sub(r'.*/', '', dir, dir), budirs)
@@ -150,30 +150,51 @@ for (x,y,z) in os.walk(tmp_dir + "/data/app"):
             if line.startswith("package:"): pkg=cut_quoted_arg_1(line)
             if name and pkg: break
         print(f'OK: {pkg} ; {name} ; {apkpath}')
-        apps[pkg]=(name, apkpath) #{"name": name, "apkpath": apkpath}
+        apps[pkg]={"name": name, "apkpath": apkpath, 'sel': False}
 
 if not apps: die(21, "Failed to find any valid apps in " + tmp_dir)
 key_apps_data = "APPS+DATA"
 key_apps="APPS"
 key_data="DATA"
-choices = [ (key_apps_data, "Inject apps and data"), (key_apps, "Install only APKs"), (key_data, "Install only data")]
+key_sel="SELECT_APPS"
+key_sel_all="SELECT_ALL"
+key_unsel_all="CLEAR_SELECTION"
+choices = [
+    (key_sel, "Select apps"),
+    (key_sel_all, "Check everything"),
+    (key_unsel_all, "Uncheck everything"),
+    ("===", "========"),
+    (key_apps_data, "Inject apps and data"),
+    (key_apps, "Install only APKs"),
+    (key_data, "Install only data")
+
+    ]
+
+def apply_selection(sel):
+    global apps
+    check_all = len(sel) == 1 and sel[0] == '*'
+    for el in apps:
+        if check_all: apps[el]['sel'] = True
+        else: apps[el]['sel'] = (el in sel)
 
 while(True):
-    choice, resmode = dlg.menu("Please select operation mode, app selection will follow", choices = choices)
+    count_all = len(apps)
+    count_sel = len(list(filter(lambda el: apps[el]['sel'], apps)))
+    choice, resmode = dlg.menu(f"Please select packages and/or what to do with them. Currently selected: {count_sel}/{count_all}", choices = choices)
     #print(choice)
-    if choice != 'ok': exit(0)
-
-    ansage = {
-        key_apps_data: "Please select applications to restore. The extracted data will be injected too, overriding any data if present.",
-        key_apps: "Please select apps to restore. No data will be installed, this can be done later.",
-        key_data: "Please select data to restore. App must already be installed on the phone!"
-        }
-
-    appchoices = []
-    for el in apps: appchoices.append((el, apps[el][0], False)) #"" + appchoices[el][0]
-    #list(map(lambda el: (el, el["name"] + " (" + pkg + ")", False), apps))
-
-    print(appchoices)
-    ret = dlg.checklist(ansage[resmode], choices = appchoices, width=dlgwidth, height=dlgheight, list_height=dlgheight-2)
-
-    print(ret)
+    if choice != dialog.Dialog.OK: exit(0)
+    if resmode == key_sel_all:
+        apply_selection(['*'])
+        continue
+    if resmode == key_unsel_all:
+        apply_selection([])
+        continue
+    if resmode == key_sel:
+        appchoices = []
+        for el in apps: appchoices.append((el, apps[el]['name'], apps[el]['sel'] or False)) #"" + appchoices[el][0]
+        #list(map(lambda el: (el, el["name"] + " (" + pkg + ")", False), apps))
+        #print(appchoices)
+        ret_btn, ret_items = dlg.checklist("Apps to act on:", choices = appchoices, width=dlgwidth, height=dlgheight, list_height=dlgheight-2)
+        apply_selection(ret_items)
+    
+    

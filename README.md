@@ -1,16 +1,14 @@
-NAdroid App Restorer
-====================
+NAndroid App Restorer
+=====================
 
-INSTALLATION:
-------------
+## INSTALLATION
 
 ```
 $ apt install android-sdk-build-tools python3-dialog
 $ python3 nanares.py -h
 ```
 
-ABOUT:
------
+## ABOUT
 
 Small script hacked together to make a one-time job but with comfort!
 
@@ -19,7 +17,7 @@ That's done by injecting apps and their data from an existing TWRP (NAndroid) ba
 
 It might support older Android versions but it's not explicitly tested.
 
-Unless configured by options (see --help), it will assume that data is either already pulled from the phone (and then specified by the first parameter) or it will interact via dialog tool to select an existing backup.
+Unless configured by options (see `--help`), it will assume that data is either already pulled from the phone (and then specified by the first parameter) or it will interact via dialog tool to select an existing backup.
 
 The python version expected here is 3.7.3. It might work with Python 3.5 or even 3.3 but it's not explicitly tested.
 
@@ -27,6 +25,8 @@ THIS TOOL COMES WITHOUT ANY WARRANTIES!
 It might damage your phone and make it unbootable!
 It requires you to root the phone at least for the time of restore operation!
 YOU HAVE BEEN WARNED!
+
+## LICENSE
 
 ```
 Copyright (c) 2019 Eduard Bloch
