@@ -228,9 +228,9 @@ def auto_select():
         print("ADB failure", ex)
         pass
     
-def confirm_start():
-    instructions = "Please check your phone and make sure that the phone is in offline mode (flight/plane mode) and that all active apps are closed (double check the app list!)" \
-"For some phones, turning off the display/lockscreen timeout is also a good idea. When ready, press OK."
+def confirm_start(cnt):
+    instructions = f"Please check your phone and make sure that the phone is in offline mode (flight/plane mode) and that all active apps are closed (double check the app list!)" \
+f"For some phones, turning off the display/lockscreen timeout is also a good idea. When ready, press OK to start installing {cnt} apps (resp. their data)"
     return dialog.Dialog.OK == dlg.yesno(instructions, width=dlgwidth)
 
 #def selected_appsx():
@@ -284,14 +284,17 @@ def post_dialog(suc_sel):
         return
 
 def install(inst_apps, inst_data):
-    if not confirm_start(): return
+    sel_apps = selected_apps()
+    if not confirm_start(len(sel_apps)): return
     good = []
     log = open(log_path, 'w')
     dlg.gauge_start("Performing operations", width = dlgwidth)
-    sel_apps = selected_apps()
-    prog = 0
+    prog = -1
     for key in sel_apps:
-        dlg.gauge_update(int((++prog)/len(sel_apps)), key, update_text=True)
+        prog += 1
+        dlg.gauge_update(int(prog*100/len(sel_apps)), key, update_text=True)
+        #subprocess.run(["sleep", "1"])
+        #continue
         if inst_apps:
             log.write(f"NANARES: Installing {key}:\n")
             p = Popen(["adb", "install", "-r", apps[key]["apkpath"]], stdout=PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
@@ -321,9 +324,12 @@ def install(inst_apps, inst_data):
             xret = ""
             try:
                 for push_cmd in [
+# pm root commands are failing for unknown reason in the adb call but work in the interactive shell
+#                    f'adb shell su -c "pm disable {key}"',
                     f'tar -f- -c -C "{tmp_dir}" data/data/{key} | adb shell su -c "tar -f- -x -C /"',
                     f'adb shell su -c "chown -R {uid}:{uid} /data/data/{key}"',
                     f'adb shell su -c "restorecon -Rv /data/data/{key}"',
+#                    f'adb shell su -c "pm enable {key}"',
                     f'adb shell sync'
                     ]:
                     log.write(push_cmd)
