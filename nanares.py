@@ -148,7 +148,11 @@ if not tmp_stuff:
 
 apps={}
 
-def cut_quoted_arg_1(s): return s.split("'")[1]
+def cut_arg_1(s, delimiter="'"):
+    tokens=s.strip().split(delimiter)
+    if len(tokens) > 1:
+        return tokens[1]
+    return []
 
 for (x,y,z) in os.walk(os.path.join(tmp_dir, "data", "app")):
     #print("DIRSTUFF:", z)
@@ -159,8 +163,8 @@ for (x,y,z) in os.walk(os.path.join(tmp_dir, "data", "app")):
         pkg=''
         tp = subprocess.Popen(["aapt", "dump", "badging", apkpath], stdout=subprocess.PIPE, universal_newlines=True, encoding=encoding)
         for line in tp.stdout:
-            if line.startswith("application-label:"): name=cut_quoted_arg_1(line)
-            if line.startswith("package:"): pkg=cut_quoted_arg_1(line)
+            if line.startswith("application-label:"): name=cut_arg_1(line)
+            if line.startswith("package:"): pkg=cut_arg_1(line)
             if name and pkg: break
         print(f'OK: {pkg} ; {name} ; {apkpath}')
         apps[pkg]={"name": name, "apkpath": apkpath, 'sel': False}
@@ -169,6 +173,7 @@ if not apps: die(21, "Failed to find any valid apps in " + tmp_dir)
 #key_apps_data = "APPS+DATA"
 key_apps="APPS"
 key_data="DATA"
+key_apps_data="APPS+DATA"
 key_uninstall="DEINST"
 key_sel="SELECT_APPS"
 key_sel_all="SELECT_ALL"
@@ -180,7 +185,7 @@ choices_main = [
     (key_sel_all, "Check everything"),
     (key_unsel_all, "Uncheck everything"),
     ("===", "========"),
-    #(key_apps_data, "Inject apps and data"),
+    (key_apps_data, "Install apps and data"),
     (key_apps, "Install APKs"),
     (key_data, "Install app data"),
     (key_uninstall, "Uninstall selected apps if possible"),
@@ -232,6 +237,8 @@ key_sel_unsuc = "Uncheck_Succeeded"
 key_sel_unfail= "Uncheck_Failed"
 key_log = "View_Log"
 log_path = os.path.join(args.wd, "op.log")
+key_reboot = "REBOOT"
+key_back = "BACK"
 
 def post_dialog(suc_sel):
     msg = "Congratulations, {0} selected operations succeeded".format(len(suc_sel))
@@ -239,11 +246,13 @@ def post_dialog(suc_sel):
     if len(suc_sel) != len(old_sel):
         msg = "Some of the selected operations succeeded ({0} of {1})".format(len(suc_sel), len(old_sel))
     # XXX: add finer logics for the cases "no selection" or "all succeeded"
+    msg += "\n\nPlease reboot the phone ASAP otherwise the apps might destroy the injected data\n"
     choices = [
         (key_sel_unsuc, "Remove the apps with succeeded operations from the selection"),
         (key_sel_unfail, "Remove the apps behind FAILED operations from selection"),
         (key_log, "View the operations log"),
-        ("BACK", "Main Menu")
+        (key_reboot, "Reboot phone"),
+        (key_back, "Main Menu")
         ]
     while True:
         response, item = dlg.menu(msg, choices = choices, height=dlgheight, width=dlgwidth)
@@ -258,16 +267,59 @@ def post_dialog(suc_sel):
             continue
         return
 
-def install_apks():
+def install(inst_apps, inst_data):
+    if not confirm_start(): return
     good = []
     log = open(log_path, 'w')
-    for key in selected_apps():
-        log.write(f"NANARES: Installing {key}:\n")
-        p = Popen(["adb", "install", "-r", apps[key]["apkpath"]], stdout=PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-        sout, serr = p.communicate()
-        if p.wait() == 0: good.append(key)
-        for s in sout: log.write(s)
+    dlg.gauge_start("Performing operations", width = dlgwidth)
+    sel_apps = selected_apps()
+    prog = 0
+    for key in sel_apps:
+        dlg.gauge_update(int((++prog)/len(sel_apps)), key, update_text=True)
+        if inst_apps:
+            log.write(f"NANARES: Installing {key}:\n")
+            p = Popen(["adb", "install", "-r", apps[key]["apkpath"]], stdout=PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+            sout, serr = p.communicate()
+            log.writelines(sout)
+            ok = p.wait() == 0
+            if ok and not inst_data: good.append(key)
+        if inst_data:
+            log.write(f"NANARES: Installing data from {key}:\n")
+            p = Popen(["adb", "shell" , f"dumpsys package {key}"], stdout=PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+            #sout, serr = p.communicate()
+            uid = 0
+            for line in p.stdout:
+                what = line.strip().split("=")
+                if len(what) < 2 or what[0] != "userId": continue
+                uid = int(what[1])
+                log.write(line)
+                break
+            if p.wait() != 0: continue
+            # have the id, now push data and set attributes
+            #p1 = Popen(["tar", "-f-", "-c", "-C", tmp_dir,  "/data/data/"+key ], stdout=PIPE, stderr=DEVNULL)
+            #p2 = Popen(["adb", "shell", 'su -c "tar -f- -v -x -C /"'], stdin=p1.stdout, stdout=PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+            #p1.stdout.close()
+            #sout, serr = p2.communicate()            
+            #ok = p2.wait() == 0 and p1.wait() == 0
+            #log.writelines(sout)
+            xret = ""
+            try:
+                for push_cmd in [
+                    f'tar -f- -c -C "{tmp_dir}" data/data/{key} | adb shell su -c "tar -f- -x -C /"',
+                    f'adb shell su -c "chown -R {uid}:{uid} /data/data/{key}"',
+                    f'adb shell su -c "restorecon -Rv /data/data/{key}"',
+                    f'adb shell sync'
+                    ]:
+                    log.write(push_cmd)
+                    xret = subprocess.check_output(push_cmd, shell=True, stderr=subprocess.STDOUT);
+                    log.write(str(xret, encoding))
+            except:
+                log.write("FAILED: " + str(xret, encoding))
+                continue
+            # great, came so far without exceptions of detected failures
+            good.append(key)
     log.close()
+    dlg.gauge_stop()
     post_dialog(good)
 
 if args.nodlg:
@@ -300,12 +352,13 @@ while(True):
         #list(map(lambda el: (el, el["name"] + " (" + pkg + ")", False), apps))
         #print(appchoices)
         ret_btn, ret_items = dlg.checklist("Apps to act on:", choices = appchoices, width=dlgwidth, height=dlgheight, list_height=dlgheight-2)
-        apply_selection(ret_items)
-#    if resmode == key_apps or resmode == key_apps_data or resmode == key_data:
-#        flash_selection(resmode)
+        if Dialog.OK == ret_btn: apply_selection(ret_items)
     if resmode == key_apps:
-        install_apks()
+        install(True, False)
+    if resmode == key_data:
+        install(False, True)
+    if resmode == key_apps_data:
+        install(True, True)
     if resmode == key_sel_load:
         with open(sel_ser_file, 'r') as f: sel = ast.literal_eval(f.read())
         apply_selection(sel)
-
