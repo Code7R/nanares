@@ -198,14 +198,17 @@ choices_options = [
 
 sel_ser_file = os.path.join(args.wd, 'selection.py')
 
-def apply_selection(sel, invert_selection=False):
+def store_selection(sel):
+    with open(sel_ser_file, 'w') as f:f.write(repr(sel))
+
+def apply_selection(sel):
     global apps
     check_all = len(sel) == 1 and sel[0] == '*'
     for el in apps:
         if check_all: apps[el]['sel'] = True
-        else: apps[el]['sel'] = (el in sel) != invert_selection
-    with open(sel_ser_file, 'w') as f:f.write(repr(sel))
-
+        else: apps[el]['sel'] = (el in sel)
+    store_selection(sel)
+    
 def confirm_start():
     instructions = "Please check your phone and make sure that the phone is in offline mode (flight/plane mode) and that all active apps are closed (double check the app list!)" \
 "For some phones, turning off the display/lockscreen timeout is also a good idea. When ready, press OK."
@@ -228,27 +231,44 @@ def selected_apps():
 key_sel_unsuc = "Uncheck_Succeeded"
 key_sel_unfail= "Uncheck_Failed"
 key_log = "View_Log"
-#log_file = os.path.join(
+log_path = os.path.join(args.wd, "op.log")
 
-def post_dialog(log, suc_sel):
-    if len(suc_sel) == len(selected_apps()):
-        msg = "Congratulations, {0} selected operations succeeded".format(len(suc_sel))
-    else:
-        msg = "Some of the selected operations succeeded ({0} of {1})".format(len(suc_sel), len(selected_apps()))
-    dlg.msgbox(log)
-    exit(1)
+def post_dialog(suc_sel):
+    msg = "Congratulations, {0} selected operations succeeded".format(len(suc_sel))
+    old_sel = selected_apps()
+    if len(suc_sel) != len(old_sel):
+        msg = "Some of the selected operations succeeded ({0} of {1})".format(len(suc_sel), len(old_sel))
+    # XXX: add finer logics for the cases "no selection" or "all succeeded"
+    choices = [
+        (key_sel_unsuc, "Remove the apps with succeeded operations from the selection"),
+        (key_sel_unfail, "Remove the apps behind FAILED operations from selection"),
+        (key_log, "View the operations log"),
+        ("BACK", "Main Menu")
+        ]
+    while True:
+        response, item = dlg.menu(msg, choices = choices, height=dlgheight, width=dlgwidth)
+        if response == Dialog.CANCEL or item == "BACK": return
+        if item == key_sel_unsuc: # drop the good ones, keep the bad
+            for key in suc_sel: apps[key]['sel'] = False
+            apply_selection(selected_apps())
+        elif item == key_sel_unfail: # keep only the good ones, drop failed
+            apply_selection(suc_sel)
+        elif item == key_log:
+            dlg.textbox(log_path, height=dlgheight, width=dlgwidth)
+            continue
+        return
 
 def install_apks():
-    logbuf = ''
     good = []
+    log = open(log_path, 'w')
     for key in selected_apps():
-        msg = f"NANARES: Installing {key}:\n"
-        logbuf += msg
+        log.write(f"NANARES: Installing {key}:\n")
         p = Popen(["adb", "install", "-r", apps[key]["apkpath"]], stdout=PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
         sout, serr = p.communicate()
         if p.wait() == 0: good.append(key)
-        for s in sout: logbuf += s
-    post_dialog(logbuf, good)
+        for s in sout: log.write(s)
+    log.close()
+    post_dialog(good)
 
 if args.nodlg:
     print("No terminal capabilities, aborting interactive mode")
