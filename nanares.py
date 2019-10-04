@@ -378,7 +378,7 @@ while(True):
         #list(map(lambda el: (el, el["name"] + " (" + pkg + ")", False), apps))
         #print(appchoices)
         ret_btn, ret_items = dlg.checklist("Apps to act on:", choices = appchoices, width=dlgwidth, height=dlgheight, list_height=dlgheight-2)
-        if Dialog.OK == ret_btn: apply_selection(ret_items, True)
+        if Dialog.OK == ret_btn: apply_selection(ret_items, False)
     if resmode == key_apps:
         install(True, False)
     if resmode == key_data:
