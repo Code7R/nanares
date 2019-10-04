@@ -265,6 +265,8 @@ def post_dialog(suc_sel):
         elif item == key_log:
             dlg.textbox(log_path, height=dlgheight, width=dlgwidth)
             continue
+        elif item == key_reboot:
+            subprocess.run(["adb", "reboot"])
         return
 
 def install(inst_apps, inst_data):
@@ -348,7 +350,8 @@ while(True):
         continue
     if resmode == key_sel:
         appchoices = []
-        for el in apps: appchoices.append((el, apps[el]['name'], apps[el]['sel'] or False)) #"" + appchoices[el][0]
+        def pick_sortkey(key): return apps[key]['name'].lower()
+        for el in sorted(apps, key=pick_sortkey) : appchoices.append((el, apps[el]['name'], apps[el]['sel'] or False))
         #list(map(lambda el: (el, el["name"] + " (" + pkg + ")", False), apps))
         #print(appchoices)
         ret_btn, ret_items = dlg.checklist("Apps to act on:", choices = appchoices, width=dlgwidth, height=dlgheight, list_height=dlgheight-2)
