@@ -177,13 +177,15 @@ key_apps_data="APPS+DATA"
 key_uninstall="DEINST"
 key_sel="SELECT_APPS"
 key_sel_all="SELECT_ALL"
-key_unsel_all="CLEAR_SELECTION"
+key_sel_none="CLEAR_SELECTION"
+key_sel_auto="AUTO_SEL"
 key_sel_load="LOAD_SELECTION"
 
 choices_main = [
     (key_sel, "Select apps"),
     (key_sel_all, "Check everything"),
-    (key_unsel_all, "Uncheck everything"),
+    (key_sel_none, "Uncheck everything"),
+    (key_sel_auto, "Check all but not installed ones"),
     ("===", "========"),
     (key_apps_data, "Install apps and data"),
     (key_apps, "Install APKs"),
@@ -206,13 +208,25 @@ sel_ser_file = os.path.join(args.wd, 'selection.py')
 def store_selection(sel):
     with open(sel_ser_file, 'w') as f:f.write(repr(sel))
 
-def apply_selection(sel):
+def apply_selection(sel, inverse):
     global apps
-    check_all = len(sel) == 1 and sel[0] == '*'
     for el in apps:
-        if check_all: apps[el]['sel'] = True
-        else: apps[el]['sel'] = (el in sel)
+        apps[el]['sel'] = (el in sel) != inverse
     store_selection(sel)
+
+def auto_select():
+    try:
+        p = Popen(["adb", "shell", "pm", "list", "packages"], stdout=PIPE, universal_newlines=True)
+        inst_app=[]
+        for line in p.stdout:
+            print(line)
+            arg = cut_arg_1(line, ':')
+            if not arg: continue
+            inst_app.append(arg)
+        apply_selection(inst_app, True)
+    except subprocess.CalledProcessError as ex:
+        print("ADB failure", ex)
+        pass
     
 def confirm_start():
     instructions = "Please check your phone and make sure that the phone is in offline mode (flight/plane mode) and that all active apps are closed (double check the app list!)" \
@@ -259,9 +273,9 @@ def post_dialog(suc_sel):
         if response == Dialog.CANCEL or item == "BACK": return
         if item == key_sel_unsuc: # drop the good ones, keep the bad
             for key in suc_sel: apps[key]['sel'] = False
-            apply_selection(selected_apps())
+            apply_selection(selected_apps(), False)
         elif item == key_sel_unfail: # keep only the good ones, drop failed
-            apply_selection(suc_sel)
+            apply_selection(suc_sel, False)
         elif item == key_log:
             dlg.textbox(log_path, height=dlgheight, width=dlgwidth)
             continue
@@ -343,10 +357,13 @@ while(True):
     choice, resmode = dlg.menu(f"Please select packages and/or what to do with them. Currently selected: {count_sel}/{count_all}", choices = choices_main, height=dlgheight, width=dlgwidth, menu_height=dlgheight-5)
     if choice != dialog.Dialog.OK: exit(0)
     if resmode == key_sel_all:
-        apply_selection(['*'])
+        apply_selection([], True)
         continue
-    if resmode == key_unsel_all:
-        apply_selection([])
+    if resmode == key_sel_none:
+        apply_selection([], False)
+        continue
+    if resmode == key_sel_auto:
+        auto_select()
         continue
     if resmode == key_sel:
         appchoices = []
@@ -355,7 +372,7 @@ while(True):
         #list(map(lambda el: (el, el["name"] + " (" + pkg + ")", False), apps))
         #print(appchoices)
         ret_btn, ret_items = dlg.checklist("Apps to act on:", choices = appchoices, width=dlgwidth, height=dlgheight, list_height=dlgheight-2)
-        if Dialog.OK == ret_btn: apply_selection(ret_items)
+        if Dialog.OK == ret_btn: apply_selection(ret_items, True)
     if resmode == key_apps:
         install(True, False)
     if resmode == key_data:
