@@ -102,7 +102,7 @@ for subdir in [tmp_dir, dl_dir]:
 
 src_dir=args.src
 if not args.src:
-    ok = dlg.yesno("Source not specified, fetch from device?")
+    ok = dlg.yesno("Source not specified, fetch TWRP data from device?")
     if ok == dialog.Dialog.OK:
         remotecmd = "echo /storage/*/TWRP/BACKUPS/*/* /storage/emulated/0/TWRP/BACKUPS/*/*"
         #ret, err, status = adb_read_strings()
@@ -387,4 +387,4 @@ while(True):
         install(True, True)
     if resmode == key_sel_load:
         with open(sel_ser_file, 'r') as f: sel = ast.literal_eval(f.read())
-        apply_selection(sel)
+        apply_selection(sel, False)
